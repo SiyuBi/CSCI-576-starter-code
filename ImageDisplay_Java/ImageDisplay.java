@@ -218,21 +218,40 @@ public class ImageDisplay {
 
 	// Smart quantization for YUV channels with custom range
 	private double smartQuantizeYUV(double value, int bits, int[] histogram, double minVal, double maxVal) {
+		// Map YUV value to histogram index range [0,255]
+		int mappedValue;
+		if (minVal == -128 && maxVal == 127) { // U or V channel
+			mappedValue = (int)Math.round(value + 128);
+		} else { // Y channel
+			mappedValue = (int)Math.round(value);
+		}
+		mappedValue = Math.max(0, Math.min(255, mappedValue));
+		
+		// Calculate optimal boundaries
 		int[] boundaries = calculateOptimalBoundaries(histogram, bits);
 		
-		// Convert boundaries to actual YUV range
-		double[] realBoundaries = new double[boundaries.length];
-		for (int i = 0; i < boundaries.length; i++) {
-			realBoundaries[i] = mapToRange(boundaries[i], 0, 255, minVal, maxVal);
-		}
-		
 		// Find corresponding region
-		for (int i = 0; i < realBoundaries.length - 1; i++) {
-			if (value >= realBoundaries[i] && value < realBoundaries[i + 1]) {
-				return (realBoundaries[i] + realBoundaries[i + 1]) / 2.0;
+		for (int i = 0; i < boundaries.length - 1; i++) {
+			if (mappedValue >= boundaries[i] && mappedValue < boundaries[i + 1]) {
+				// Calculate representative value
+				int representative = calculateRepresentative(boundaries[i], boundaries[i + 1], histogram);
+				
+				// Map representative value back to YUV range
+				if (minVal == -128 && maxVal == 127) { // U or V channel
+					return representative - 128.0;
+				} else { // Y channel  
+					return representative;
+				}
 			}
 		}
-		return (realBoundaries[realBoundaries.length-2] + realBoundaries[realBoundaries.length-1]) / 2.0;
+		
+		// Boundary case
+		int lastRepresentative = calculateRepresentative(boundaries[boundaries.length-2], boundaries[boundaries.length-1], histogram);
+		if (minVal == -128 && maxVal == 127) {
+			return lastRepresentative - 128.0;
+		} else {
+			return lastRepresentative;
+		}
 	}
 
 	// Calculate optimal boundaries using equal probability method
