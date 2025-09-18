@@ -102,7 +102,7 @@ public class ImageDisplay {
 	// RGB to YUV conversion
 	private double[] rgbToYuv(int r, int g, int b) {
 		double y = 0.299 * r + 0.587 * g + 0.114 * b;
-		double u = -0.417 * r - 0.289 * g + 0.436 * b;
+		double u = -0.147 * r - 0.289 * g + 0.436 * b;
 		double v = 0.615 * r - 0.515 * g - 0.100 * b;
 		return new double[]{y, u, v};
 	}
