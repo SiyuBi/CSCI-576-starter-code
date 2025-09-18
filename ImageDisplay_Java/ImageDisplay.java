@@ -62,18 +62,13 @@ public class ImageDisplay {
 		}
 	}
 
-	public void showIms(String[] args){
-
+	public void showIms(String[] args, int C, int M, int Q1, int Q2, int Q3){
 		// Read in the specified image
 		imgOne = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
 		readImageRGB(width, height, args[0], imgOne);
 		
-		// Create processed image
-		BufferedImage imgTwo = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-		// TODO: image processing
-		Graphics2D g = imgTwo.createGraphics();
-		g.drawImage(imgOne, 0, 0, null);
-		g.dispose();
+		// Process the image using your quantization method
+		BufferedImage imgTwo = processImage(args[0], C, M, Q1, Q2, Q3);
 
 		// Use labels to display both images
 		frame = new JFrame("Original vs Processed");
@@ -391,7 +386,7 @@ public class ImageDisplay {
 		
 		ImageDisplay ren = new ImageDisplay();
 		// ren.processImage(imagePath, C, M, Q1, Q2, Q3);
-		ren.showIms(args);
+		ren.showIms(args, C, M, Q1, Q2, Q3);
 	}
 
 }
