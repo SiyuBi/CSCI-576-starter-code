@@ -4,6 +4,7 @@ import java.awt.image.*;
 import java.io.*;
 import javax.swing.*;
 
+import javax.imageio.ImageIO;
 
 public class ImageDisplay {
 
@@ -20,7 +21,7 @@ public class ImageDisplay {
 	/** Read Image RGB
 	 *  Reads the image of given width and height at the given imgPath into the provided BufferedImage.
 	 */
-	private void readImageRGB(int width, int height, String imgPath, BufferedImage img)
+	public void readImageRGB(int width, int height, String imgPath, BufferedImage img)
 	{
 		try
 		{
@@ -308,7 +309,7 @@ public class ImageDisplay {
 		return (value - fromMin) / (fromMax - fromMin) * (toMax - toMin) + toMin;
 	}
 
-	private BufferedImage processImage(String imagePath, int C, int M, int Q1, int Q2, int Q3) {
+	public BufferedImage processImage(String imagePath, int C, int M, int Q1, int Q2, int Q3) {
 		// Read original image
 		BufferedImage original = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
 		readImageRGB(width, height, imagePath, original);
@@ -389,6 +390,15 @@ public class ImageDisplay {
 		return processed;
 	}
 
+	public void saveImage(BufferedImage image, String filename) {
+		try {
+			File outputFile = new File(filename);
+			ImageIO.write(image, "png", outputFile);
+			System.out.println("Image saved: " + filename);
+		} catch (IOException e) {
+			System.err.println("Error saving image: " + e.getMessage());
+		}
+	}
 	public static void main(String[] args) {
 
 		if (args.length != 6) {
