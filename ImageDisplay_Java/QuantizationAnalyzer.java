@@ -86,7 +86,8 @@ public class QuantizationAnalyzer {
             csvWriter = new PrintWriter(new FileWriter("quantization_analysis.csv"));
             
             // Write CSV header
-            csvWriter.println("N,C,M,Q1,Q2,Q3,Error,ImagePath");
+            // csvWriter.println("N,C,M,Q1,Q2,Q3,Error,ImagePath");
+            csvWriter.println("N,<C M Q1 Q2 Q3>,Output Image,Error");
             
             // Test N=4, 6, 8
             int[] testValues = {4, 6, 8};
@@ -118,13 +119,11 @@ public class QuantizationAnalyzer {
                                                                 N, C, M, q1, q2, q3);
                                     saveOutputImage(processedImage, imageFilename);
                                 }
-                                
-                                // Write to CSV
-                                csvWriter.printf("%d,%d,%d,%d,%d,%d,%d,%s%n", 
-                                               N, C, M, q1, q2, q3, error, imageFilename);
-                                
-                                System.out.printf("N=%d, C=%d, M=%d, Q=(%d,%d,%d), Error=%d%n", 
-                                                N, C, M, q1, q2, q3, error);
+
+                                // Write to CSV (unified format for all N values)
+                                String configStr = String.format("<%d %d %d %d %d>", C, M, q1, q2, q3);
+                                csvWriter.printf("%d,%s,%s,%d%n", 
+                                            N, configStr, imageFilename, error);
                                 
                             } catch (Exception e) {
                                 System.err.printf("Error processing N=%d, C=%d, M=%d, Q=(%d,%d,%d): %s%n", 
