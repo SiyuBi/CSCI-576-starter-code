@@ -1,421 +1,403 @@
-
 import java.awt.*;
 import java.awt.image.*;
 import java.io.*;
 import javax.swing.*;
 
-import javax.imageio.ImageIO;
-
+/**
+ * CS 576 - Assignment 2: DCT-based Image Compression
+ * Implements JPEG-like encoder/decoder with multiple delivery modes
+ */
 public class ImageDisplay {
 
-	JFrame frame;
-	JLabel lbIm1;
-	BufferedImage imgOne;
-	BufferedImage imgTwo;
-
-	// Modify the height and width values here to read and display an image with
-  	// different dimensions. 
-	int width = 512;
-	int height = 512;
-
-	/** Read Image RGB
-	 *  Reads the image of given width and height at the given imgPath into the provided BufferedImage.
+	// GUI components
+	private JFrame frame;
+	private JLabel lbOriginal;
+	private JLabel lbDecoded;
+	
+	// Image data
+	private BufferedImage originalImage;
+	private BufferedImage decodedImage;
+	
+	// Image dimensions (fixed for this assignment)
+	private static final int WIDTH = 352;
+	private static final int HEIGHT = 288;
+	private static final int BLOCK_SIZE = 8;
+	
+	// DCT coefficients storage (quantized)
+	// [channel][blockY][blockX][u][v]
+	private int[][][][][] dctCoefficients;
+	
+	// Parameters
+	private int quantizationLevel;  // N: 0-7
+	private int deliveryMode;       // M: 1=baseline, 2=spectral, 3=successive bit
+	private int latency;            // L: milliseconds
+	
+	/**
+	 * Constructor
 	 */
-	public void readImageRGB(int width, int height, String imgPath, BufferedImage img)
-	{
-		try
-		{
-			int frameLength = width*height*3;
-
+	public ImageDisplay() {
+		int numBlocksX = WIDTH / BLOCK_SIZE;   // 352/8 = 44
+		int numBlocksY = HEIGHT / BLOCK_SIZE;  // 288/8 = 36
+		dctCoefficients = new int[3][numBlocksY][numBlocksX][BLOCK_SIZE][BLOCK_SIZE];
+	}
+	
+	// ============================================================
+	// PART 1: IMAGE I/O
+	// ============================================================
+	
+	/**
+	 * Read RGB image from file
+	 * Format: R plane, G plane, B plane (each width*height bytes)
+	 */
+	private void readImageRGB(String imgPath) {
+		try {
+			int frameLength = WIDTH * HEIGHT * 3;
 			File file = new File(imgPath);
 			RandomAccessFile raf = new RandomAccessFile(file, "r");
 			raf.seek(0);
 
-			long len = frameLength;
-			byte[] bytes = new byte[(int) len];
-
+			byte[] bytes = new byte[frameLength];
 			raf.read(bytes);
+			raf.close();
+			
+			originalImage = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
 
 			int ind = 0;
-			for(int y = 0; y < height; y++)
-			{
-				for(int x = 0; x < width; x++)
-				{
-					byte a = 0;
-					byte r = bytes[ind];
-					byte g = bytes[ind+height*width];
-					byte b = bytes[ind+height*width*2]; 
-
-					int pix = 0xff000000 | ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
-					//int pix = ((a << 24) + (r << 16) + (g << 8) + b);
-					img.setRGB(x,y,pix);
+			for (int y = 0; y < HEIGHT; y++) {
+				for (int x = 0; x < WIDTH; x++) {
+					int r = bytes[ind] & 0xff;
+					int g = bytes[ind + HEIGHT * WIDTH] & 0xff;
+					int b = bytes[ind + HEIGHT * WIDTH * 2] & 0xff;
+					
+					int pix = 0xff000000 | (r << 16) | (g << 8) | b;
+					originalImage.setRGB(x, y, pix);
 					ind++;
 				}
 			}
-		}
-		catch (FileNotFoundException e) 
-		{
+			
+			System.out.println("Image loaded: " + imgPath);
+			
+		} catch (FileNotFoundException e) {
+			System.err.println("File not found: " + imgPath);
 			e.printStackTrace();
-		} 
-		catch (IOException e) 
-		{
+		} catch (IOException e) {
+			System.err.println("Error reading file: " + imgPath);
 			e.printStackTrace();
 		}
 	}
 
-	public void showIms(String[] args, int C, int M, int Q1, int Q2, int Q3){
-		// Read in the specified image
-		imgOne = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-		readImageRGB(width, height, args[0], imgOne);
+	// ============================================================
+	// PART 2: ENCODER
+	// ============================================================
+	
+	/**
+	 * Encode the image using DCT
+	 * Steps: Break into blocks -> DCT -> Quantize
+	 */
+	private void encodeImage() {
+		System.out.println("Encoding image...");
 		
-		// Process the image using your quantization method
-		BufferedImage imgTwo = processImage(args[0], C, M, Q1, Q2, Q3);
-
-		// Use labels to display both images
-		frame = new JFrame("Original vs Processed");
-		GridBagLayout gLayout = new GridBagLayout();
-		frame.getContentPane().setLayout(gLayout);
-
-		// left: original image label
-		lbIm1 = new JLabel(new ImageIcon(imgOne));
-		// right: processed image label
-		JLabel lbIm2 = new JLabel(new ImageIcon(imgTwo));
-
+		// TODO: For each channel (R, G, B)
+		//   1. Extract channel data
+		//   2. Break into 8x8 blocks
+		//   3. Apply DCT to each block
+		//   4. Quantize DCT coefficients
+		//   5. Store in dctCoefficients array
+		
+		System.out.println("Encoding complete.");
+	}
+	
+	/**
+	 * Apply 2D DCT to an 8x8 block
+	 * Input: 8x8 pixel block (spatial domain)
+	 * Output: 8x8 DCT coefficients (frequency domain)
+	 * 
+	 * Formula: F(u,v) = (1/4) * C(u) * C(v) * 
+	 *          Σ(x=0 to 7) Σ(y=0 to 7) f(x,y) * cos[(2x+1)uπ/16] * cos[(2y+1)vπ/16]
+	 * where C(u) = 1/√2 if u=0, else 1
+	 */
+	private double[][] applyDCT(int[][] block) {
+		double[][] dct = new double[BLOCK_SIZE][BLOCK_SIZE];
+		
+		// For each DCT coefficient F(u,v)
+		for (int u = 0; u < BLOCK_SIZE; u++) {
+			for (int v = 0; v < BLOCK_SIZE; v++) {
+				double sum = 0.0;
+				
+				// Sum over all spatial positions (x,y)
+				for (int x = 0; x < BLOCK_SIZE; x++) {
+					for (int y = 0; y < BLOCK_SIZE; y++) {
+						double cosX = Math.cos((2 * x + 1) * u * Math.PI / 16.0);
+						double cosY = Math.cos((2 * y + 1) * v * Math.PI / 16.0);
+						sum += block[x][y] * cosX * cosY;
+					}
+				}
+				
+				// Apply normalization factors
+				double cu = (u == 0) ? (1.0 / Math.sqrt(2)) : 1.0;
+				double cv = (v == 0) ? (1.0 / Math.sqrt(2)) : 1.0;
+				
+				dct[u][v] = 0.25 * cu * cv * sum;
+			}
+		}
+		
+		return dct;
+	}
+	
+	/**
+	 * Quantize DCT coefficients
+	 * Formula: F'[u,v] = round(F[u,v] / 2^N)
+	 */
+	private int quantize(double value) {
+		int quantStep = (int) Math.pow(2, quantizationLevel);
+		return (int) Math.round(value / quantStep);
+	}
+	
+	// ============================================================
+	// PART 3: DECODER
+	// ============================================================
+	
+	/**
+	 * Decode based on delivery mode
+	 */
+	private void decodeImage() {
+		System.out.println("Decoding with mode " + deliveryMode + "...");
+		
+		switch (deliveryMode) {
+			case 1:
+				decodeBaseline();
+						break;
+			case 2:
+				decodeSpectralSelection();
+						break;
+			case 3:
+				decodeSuccessiveBit();
+						break;
+					default:
+				System.err.println("Invalid delivery mode: " + deliveryMode);
+		}
+		
+		System.out.println("Decoding complete.");
+	}
+	
+	/**
+	 * Mode 1: Baseline Sequential Decoding
+	 * Decode blocks one by one, left-to-right, top-to-bottom
+	 */
+	private void decodeBaseline() {
+		// TODO: 
+		// for each block (row by row, col by col):
+		//   1. Dequantize all 64 coefficients
+		//   2. Apply IDCT
+		//   3. Update decodedImage
+		//   4. Refresh display
+		//   5. Sleep(latency)
+	}
+	
+	/**
+	 * Mode 2: Progressive Decoding - Spectral Selection
+	 * First decode DC for all blocks, then add AC1, AC2, ... AC63
+	 */
+	private void decodeSpectralSelection() {
+		// TODO:
+		// for coeff_index from 0 to 63:
+		//   for each block:
+		//     1. Dequantize coefficients [0..coeff_index]
+		//     2. Set rest to zero
+		//     3. Apply IDCT
+		//     4. Update decodedImage
+		//   5. Refresh display
+		//   6. Sleep(latency)
+	}
+	
+	/**
+	 * Mode 3: Progressive Decoding - Successive Bit Approximation
+	 * Decode using 1 bit, then 2 bits, ... until all bits
+	 */
+	private void decodeSuccessiveBit() {
+		// TODO:
+		// Determine max bits needed
+		// for bit_depth from 1 to max_bits:
+		//   for each block:
+		//     1. Dequantize using only [bit_depth] most significant bits
+		//     2. Apply IDCT
+		//     3. Update decodedImage
+		//   4. Refresh display
+		//   5. Sleep(latency)
+	}
+	
+	/**
+	 * Dequantize DCT coefficients
+	 * Formula: F[u,v] = F'[u,v] * 2^N
+	 */
+	private double dequantize(int quantizedValue) {
+		int quantStep = (int) Math.pow(2, quantizationLevel);
+		return quantizedValue * quantStep;
+	}
+	
+	/**
+	 * Apply Inverse DCT to recover 8x8 block
+	 * Input: 8x8 DCT coefficients (frequency domain)
+	 * Output: 8x8 pixel block (spatial domain)
+	 * 
+	 * Formula: f(x,y) = (1/4) * Σ(u=0 to 7) Σ(v=0 to 7) 
+	 *          C(u) * C(v) * F(u,v) * cos[(2x+1)uπ/16] * cos[(2y+1)vπ/16]
+	 * where C(u) = 1/√2 if u=0, else 1
+	 */
+	private int[][] applyIDCT(double[][] dct) {
+		int[][] block = new int[BLOCK_SIZE][BLOCK_SIZE];
+		
+		// For each spatial position (x,y)
+		for (int x = 0; x < BLOCK_SIZE; x++) {
+			for (int y = 0; y < BLOCK_SIZE; y++) {
+				double sum = 0.0;
+				
+				// Sum over all frequency coefficients (u,v)
+				for (int u = 0; u < BLOCK_SIZE; u++) {
+					for (int v = 0; v < BLOCK_SIZE; v++) {
+						double cu = (u == 0) ? (1.0 / Math.sqrt(2)) : 1.0;
+						double cv = (v == 0) ? (1.0 / Math.sqrt(2)) : 1.0;
+						double cosX = Math.cos((2 * x + 1) * u * Math.PI / 16.0);
+						double cosY = Math.cos((2 * y + 1) * v * Math.PI / 16.0);
+						
+						sum += cu * cv * dct[u][v] * cosX * cosY;
+					}
+				}
+				
+				// Apply normalization and clamp to [0, 255]
+				int pixelValue = (int) Math.round(0.25 * sum);
+				block[x][y] = Math.max(0, Math.min(255, pixelValue));
+			}
+		}
+		
+		return block;
+	}
+	
+	// ============================================================
+	// PART 4: GUI & DISPLAY
+	// ============================================================
+	
+	/**
+	 * Initialize and show GUI with original and decoded images side-by-side
+	 */
+	private void initializeGUI() {
+		frame = new JFrame("DCT Compression - Original vs Decoded");
+		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		frame.setLayout(new GridBagLayout());
+		
 		GridBagConstraints c = new GridBagConstraints();
 		c.fill = GridBagConstraints.HORIZONTAL;
 		c.anchor = GridBagConstraints.CENTER;
 		c.weightx = 0.5;
 		
-		// left side: original image
+		// Left: Original image
+		lbOriginal = new JLabel(new ImageIcon(originalImage));
 		c.gridx = 0;
 		c.gridy = 0;
-		frame.getContentPane().add(lbIm1, c);
+		frame.add(lbOriginal, c);
 		
-		// right side: processed image
+		// Right: Decoded image (initially empty/black)
+		decodedImage = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
+		lbDecoded = new JLabel(new ImageIcon(decodedImage));
 		c.gridx = 1;
 		c.gridy = 0;
-		frame.getContentPane().add(lbIm2, c);
-
+		frame.add(lbDecoded, c);
+		
 		frame.pack();
 		frame.setVisible(true);
 	}
 	
-	// RGB to YUV conversion
-	private double[] rgbToYuv(int r, int g, int b) {
-		double y = 0.299 * r + 0.587 * g + 0.114 * b;
-		double u = -0.147 * r - 0.289 * g + 0.436 * b;
-		double v = 0.615 * r - 0.515 * g - 0.100 * b;
-		return new double[]{y, u, v};
+	/**
+	 * Update the decoded image display
+	 */
+	private void updateDisplay() {
+		lbDecoded.setIcon(new ImageIcon(decodedImage));
+		lbDecoded.repaint();
 	}
-
-	// YUV to RGB conversion  
-	private int[] yuvToRgb(double y, double u, double v) {
-		int r = (int)(1.000 * y + 0.000 * u + 1.1398 * v);
-		int g = (int)(1.000 * y - 0.3946 * u - 0.5806 * v);
-		int b = (int)(1.000 * y + 2.0321 * u + 0.000 * v);
-		
-		// Clamp values to [0, 255]
-		r = Math.max(0, Math.min(255, r));
-		g = Math.max(0, Math.min(255, g));
-		b = Math.max(0, Math.min(255, b));
-		
-		return new int[]{r, g, b};
-	}
-
-	// uniform quantization (M=1)
-	private int uniformQuantize(int value, int bits) {
-		int levels = (int)Math.pow(2, bits);
-		int step = 256 / levels;
-		int quantized = (value / step) * step + step/2;
-		return Math.min(255, quantized);
-	}
-
-	private double uniformQuantizeDouble(double value, int bits, double min, double max) {
-		int levels = (int)Math.pow(2, bits);
-		double range = max - min;
-		double step = range / levels;
-		
-		// clamp value to [min, max]
-		double normalized = value - min;
-		int regionIndex = (int)(normalized / step);
-		
-		if (regionIndex >= levels) regionIndex = levels - 1;
-		if (regionIndex < 0) regionIndex = 0;
-		
-		// representative value: midpoint of the quantization interval
-		double representative = regionIndex * step + step / 2.0 + min;
-		
-		return Math.max(min, Math.min(max, representative));
-	}
-
-	// Calculate histogram for RGB channels
-	private int[] calculateHistogramRGB(BufferedImage img, int channel) {
-		int[] histogram = new int[256];
-		
-		for (int y = 0; y < height; y++) {
-			for (int x = 0; x < width; x++) {
-				int rgb = img.getRGB(x, y);
-				int value = 0;
-				switch(channel) {
-					case 0: value = (rgb >> 16) & 0xff; break; // R channel
-					case 1: value = (rgb >> 8) & 0xff; break;  // G channel
-					case 2: value = rgb & 0xff; break;         // B channel
-				}
-				histogram[value]++;
+	
+	/**
+	 * Sleep for latency milliseconds
+	 */
+	private void sleep() {
+		if (latency > 0) {
+			try {
+				Thread.sleep(latency);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
 			}
 		}
-		return histogram;
 	}
-
-	// Calculate histogram for YUV channels
-	private int[] calculateHistogramYUV(BufferedImage img, int channel) {
-		int[] histogram = new int[256];
+	
+	// ============================================================
+	// PART 5: MAIN PIPELINE
+	// ============================================================
+	
+	/**
+	 * Main processing pipeline
+	 */
+	public void run(String imagePath, int N, int M, int L) {
+		this.quantizationLevel = N;
+		this.deliveryMode = M;
+		this.latency = L;
 		
-		for (int y = 0; y < height; y++) {
-			for (int x = 0; x < width; x++) {
-				int rgb = img.getRGB(x, y);
-				int r = (rgb >> 16) & 0xff;
-				int g = (rgb >> 8) & 0xff;
-				int b = rgb & 0xff;
-				
-				double[] yuv = rgbToYuv(r, g, b);
-				int value;
-				
-				switch(channel) {
-					case 0: // Y channel [0,255]
-						value = (int)Math.round(yuv[0]);
-						break;
-					case 1: // U channel [-128,127] -> map to [0,255]
-						value = (int)Math.round(yuv[1] + 128);
-						break;
-					case 2: // V channel [-128,127] -> map to [0,255] 
-						value = (int)Math.round(yuv[2] + 128);
-						break;
-					default:
-						value = 0;
-				}
-				
-				value = Math.max(0, Math.min(255, value));
-				histogram[value]++;
-			}
-		}
-		return histogram;
+		System.out.println("=== DCT Compression Pipeline ===");
+		System.out.println("Image: " + imagePath);
+		System.out.println("Quantization Level (N): " + N);
+		System.out.println("Delivery Mode (M): " + M);
+		System.out.println("Latency (L): " + L + " ms");
+		System.out.println("================================\n");
+		
+		// Step 1: Read image
+		readImageRGB(imagePath);
+		
+		// Step 2: Initialize GUI
+		initializeGUI();
+		
+		// Step 3: Encode (DCT + Quantization)
+		encodeImage();
+		
+		// Step 4: Decode (Dequantization + IDCT) with specified mode
+		decodeImage();
+		
+		System.out.println("\nProcessing complete!");
 	}
-
-	// Smart quantization for RGB channels
-	private int smartQuantizeRGB(int value, int bits, int[] histogram) {
-		int[] boundaries = calculateOptimalBoundaries(histogram, bits);
-		
-		// Find which region the value belongs to
-		for (int i = 0; i < boundaries.length - 1; i++) {
-			if (value >= boundaries[i] && value < boundaries[i + 1]) {
-				return calculateRepresentative(boundaries[i], boundaries[i + 1], histogram);
-			}
-		}
-		
-		// Handle boundary case
-		return calculateRepresentative(boundaries[boundaries.length-2], boundaries[boundaries.length-1], histogram);
-	}
-
-	// Smart quantization for YUV channels with custom range
-	private double smartQuantizeYUV(double value, int bits, int[] histogram, double minVal, double maxVal) {
-		// Map YUV value to histogram index range [0,255]
-		int mappedValue;
-		if (minVal == -128 && maxVal == 127) { // U or V channel
-			mappedValue = (int)Math.round(value + 128);
-		} else { // Y channel
-			mappedValue = (int)Math.round(value);
-		}
-		mappedValue = Math.max(0, Math.min(255, mappedValue));
-		
-		// Calculate optimal boundaries
-		int[] boundaries = calculateOptimalBoundaries(histogram, bits);
-		
-		// Find corresponding region
-		for (int i = 0; i < boundaries.length - 1; i++) {
-			if (mappedValue >= boundaries[i] && mappedValue < boundaries[i + 1]) {
-				// Calculate representative value
-				int representative = calculateRepresentative(boundaries[i], boundaries[i + 1], histogram);
-				
-				// Map representative value back to YUV range
-				if (minVal == -128 && maxVal == 127) { // U or V channel
-					return representative - 128.0;
-				} else { // Y channel  
-					return representative;
-				}
-			}
-		}
-		
-		// Boundary case
-		int lastRepresentative = calculateRepresentative(boundaries[boundaries.length-2], boundaries[boundaries.length-1], histogram);
-		if (minVal == -128 && maxVal == 127) {
-			return lastRepresentative - 128.0;
-		} else {
-			return lastRepresentative;
-		}
-	}
-
-	// Calculate optimal boundaries using equal probability method
-	private int[] calculateOptimalBoundaries(int[] histogram, int bits) {
-		int levels = (int)Math.pow(2, bits);
-		int[] boundaries = new int[levels + 1];
-		int[] cdf = calculateCDF(histogram);
-		int totalPixels = cdf[255];
-		
-		boundaries[0] = 0;
-		boundaries[levels] = 255;
-		
-		// Pixels per region for equal probability
-		int pixelsPerRegion = totalPixels / levels;
-		
-		int currentLevel = 1;
-		for (int i = 1; i < 256 && currentLevel < levels; i++) {
-			if (cdf[i] >= currentLevel * pixelsPerRegion) {
-				boundaries[currentLevel] = i;
-				currentLevel++;
-			}
-		}
-		
-		return boundaries;
-	}
-
-	// Calculate cumulative distribution function
-	private int[] calculateCDF(int[] histogram) {
-		int[] cdf = new int[256];
-		cdf[0] = histogram[0];
-		
-		for (int i = 1; i < 256; i++) {
-			cdf[i] = cdf[i-1] + histogram[i];
-		}
-		return cdf;
-	}
-
-	// Calculate weighted representative value for a region
-	private int calculateRepresentative(int start, int end, int[] histogram) {
-		long weightedSum = 0;
-		long totalWeight = 0;
-		
-		for (int i = start; i <= end && i < 256; i++) {
-			weightedSum += i * histogram[i];
-			totalWeight += histogram[i];
-		}
-		
-		if (totalWeight == 0) return (start + end) / 2;
-		return (int)(weightedSum / totalWeight);
-	}
-
-	// Map value from one range to another
-	private double mapToRange(double value, double fromMin, double fromMax, double toMin, double toMax) {
-		return (value - fromMin) / (fromMax - fromMin) * (toMax - toMin) + toMin;
-	}
-
-	public BufferedImage processImage(String imagePath, int C, int M, int Q1, int Q2, int Q3) {
-		// Read original image
-		BufferedImage original = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-		readImageRGB(width, height, imagePath, original);
-		
-		// Create processed image
-		BufferedImage processed = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-		
-		// Pre-calculate histograms if smart quantization is needed
-		int[] histR = null, histG = null, histB = null;
-		int[] histY = null, histU = null, histV = null;
-		
-		if (M == 2) { // Smart quantization requires histogram analysis
-			if (C == 1) { // RGB space
-				histR = calculateHistogramRGB(original, 0); // R channel
-				histG = calculateHistogramRGB(original, 1); // G channel  
-				histB = calculateHistogramRGB(original, 2); // B channel
-			} else { // YUV space
-				// Convert entire image to YUV first, then build histograms
-				histY = calculateHistogramYUV(original, 0); // Y channel
-				histU = calculateHistogramYUV(original, 1); // U channel
-				histV = calculateHistogramYUV(original, 2); // V channel
-			}
-		}
-		
-		// Process each pixel
-		for (int y = 0; y < height; y++) {
-			for (int x = 0; x < width; x++) {
-				int rgb = original.getRGB(x, y);
-				int r = (rgb >> 16) & 0xff;
-				int g = (rgb >> 8) & 0xff;
-				int b = rgb & 0xff;
-				
-				if (C == 1) { // RGB space quantization
-					if (M == 1) { // Uniform quantization
-						r = uniformQuantize(r, Q1);
-						g = uniformQuantize(g, Q2);
-						b = uniformQuantize(b, Q3);
-					}
-					else if (M == 2) { // Smart quantization
-						r = smartQuantizeRGB(r, Q1, histR);
-						g = smartQuantizeRGB(g, Q2, histG);
-						b = smartQuantizeRGB(b, Q3, histB);
-					}
-				} else { // C == 2, YUV space quantization
-					// Convert RGB to YUV
-					double[] yuv = rgbToYuv(r, g, b);
-					
-					if (M == 1) { // Uniform quantization
-						// Handle possibly negative U, V values
-						double yQuant = uniformQuantizeDouble(yuv[0], Q1, 0, 255);
-						double uQuant = uniformQuantizeDouble(yuv[1], Q2, -128, 127);
-						double vQuant = uniformQuantizeDouble(yuv[2], Q3, -128, 127);
-						
-						// Convert back to RGB
-						int[] rgbArr = yuvToRgb(yQuant, uQuant, vQuant);
-						r = rgbArr[0];
-						g = rgbArr[1];
-						b = rgbArr[2];
-					}
-					else if (M == 2) { // Smart quantization
-						double yQuant = smartQuantizeYUV(yuv[0], Q1, histY, 0, 255);    // Y: [0,255]
-						double uQuant = smartQuantizeYUV(yuv[1], Q2, histU, -128, 127); // U: [-128,127]
-						double vQuant = smartQuantizeYUV(yuv[2], Q3, histV, -128, 127); // V: [-128,127]
-						
-						// Convert back to RGB
-						int[] rgbArr = yuvToRgb(yQuant, uQuant, vQuant);
-						r = rgbArr[0];
-						g = rgbArr[1];
-						b = rgbArr[2];
-					}
-				}
-				
-				int newRgb = (r << 16) | (g << 8) | b;
-				processed.setRGB(x, y, newRgb);
-			}
-		}
-		
-		return processed;
-	}
-
-	public void saveImage(BufferedImage image, String filename) {
-		try {
-			File outputFile = new File(filename);
-			ImageIO.write(image, "png", outputFile);
-			System.out.println("Image saved: " + filename);
-		} catch (IOException e) {
-			System.err.println("Error saving image: " + e.getMessage());
-		}
-	}
+	
+	// ============================================================
+	// MAIN ENTRY POINT
+	// ============================================================
+	
 	public static void main(String[] args) {
-
-		if (args.length != 6) {
-			System.out.println("Usage: java ImageDisplay <imagePath> <C> <M> <Q1> <Q2> <Q3>");
+		if (args.length != 4) {
+			System.out.println("Usage: java ImageDisplay <InputImage> <QuantizationLevel> <DeliveryMode> <Latency>");
+			System.out.println("  InputImage: path to .rgb file (352x288)");
+			System.out.println("  QuantizationLevel (N): 0-7 (0=no quantization, 7=high compression)");
+			System.out.println("  DeliveryMode (M): 1=baseline, 2=spectral selection, 3=successive bit");
+			System.out.println("  Latency (L): milliseconds delay between blocks/iterations");
+			System.out.println("\nExample: java ImageDisplay Example.rgb 3 1 100");
 			return;
 		}
 		
 		String imagePath = args[0];
-		int C = Integer.parseInt(args[1]); // 1=RGB, 2=YUV
-		int M = Integer.parseInt(args[2]); // 1=uniform, 2=smart
-		int Q1 = Integer.parseInt(args[3]);
-		int Q2 = Integer.parseInt(args[4]);
-		int Q3 = Integer.parseInt(args[5]);
+		int N = Integer.parseInt(args[1]);
+		int M = Integer.parseInt(args[2]);
+		int L = Integer.parseInt(args[3]);
 		
-		ImageDisplay ren = new ImageDisplay();
-		// ren.processImage(imagePath, C, M, Q1, Q2, Q3);
-		ren.showIms(args, C, M, Q1, Q2, Q3);
+		// Validate parameters
+		if (N < 0 || N > 7) {
+			System.err.println("Error: QuantizationLevel must be between 0 and 7");
+			return;
+		}
+		if (M < 1 || M > 3) {
+			System.err.println("Error: DeliveryMode must be 1, 2, or 3");
+			return;
+		}
+		if (L < 0) {
+			System.err.println("Error: Latency must be non-negative");
+			return;
+		}
+		
+		// Run the program
+		ImageDisplay display = new ImageDisplay();
+		display.run(imagePath, N, M, L);
 	}
-
 }
